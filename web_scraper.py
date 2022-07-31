@@ -44,6 +44,48 @@ class WebScraper:
         return date_.group(0)
 
 
+def get_article_urls(url="https://edition.cnn.com", max_links=250):
+    """
+    Retrieve article urls(links) from CNN website
+    :param url: Base url of the news provider
+    :param max_links: maximum no: of links to obtain
+    :return: list of article urls
+    """
+    article_list = []
+    response = requests.get(url)
+    tag = BeautifulSoup(response.text, "html.parser")
+    # categories = tag.find_all("a", class_="sc-fjdhpX")
+    categories = tag.select('li.sc-kAzzGY.fDMFSn')
+    # print(categories[-1].find_all("a"))
+    # category_hrefs = [[f"{cat.a['href']}{sub_cat.string}" for sub_cat in cat.find_all("a", class_="tqJTs")]
+    #                   for cat in categories]
+    for cat in categories:
+        cat_href = cat.a['href']
+        print(f"Category - {cat_href}: \n")
+        sub_categories = cat.select('li.sc-kGXeez.femHHJ')
+        # print(sub_categories)
+        for sub_cat in sub_categories:
+            sub_cat_href = sub_cat.a['href']
+            partial_url = f"{url}{sub_cat_href}"
+            print(partial_url)
+            # Get list of articles within sub category
+            try:
+                sub_cat_response = requests.get(partial_url)
+            except:
+                print("Error: Please check the validity of the url:")
+                print(partial_url)
+                continue
+            sub_cat_tag = BeautifulSoup(sub_cat_response.text, "html.parser")
+            article_tags = sub_cat_tag.find_all("h3", class_="cd__headline")
+            if len(article_tags) != 0:
+                article_urls = [f"{url}{t.a['href']}" if (t.a is not None) and t.a['href'].endswith(".html") else "" for
+                                t in article_tags]
+                article_list.extend(article_urls)
+                # print(article_urls)
+
+    return article_list
+
+
 if __name__ == "__main__":
     """
         Standalone testing of WebScraper
