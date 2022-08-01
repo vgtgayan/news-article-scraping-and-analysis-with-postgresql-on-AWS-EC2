@@ -1,3 +1,23 @@
+"""Scrape data from a news provider website and store validated data in a postgreSQL database hosted on AWS EC2 instance
+
+    Classes
+    ----------
+    WebScraper:
+        Web scraper for news articles
+
+    Functions
+    ----------
+    get_article_urls:
+        Retrieve article urls(links) from CNN website
+    scrape_news_articles:
+        Scrape data from articles from CNN website and store in a data frame
+    clean_dataset:
+        Clean and validate, scraped data
+    populate_db:
+        Populate data into postgreSQL db server on EC2
+
+"""
+
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -5,13 +25,38 @@ import re
 import random
 from typing import List
 
+# Connecting postgreSQL to Python'
+import psycopg2
+from db_config import config
+
 
 class WebScraper:
-    """
-        Web scraper for news articles(CNN)
+    """Web scraper for news articles
+    ...
+
+    Attributes
+    ----------
+    url : str
+        Valid url of news article
+
+    Methods
+    -------
+    get_title()
+        Returns title of the article
+    get_paragraphs()
+        Returns list of paragraphs inside the given tag
+    get_author()
+        Return author of an article
+    get_posted_date()
+        Return posted date of an article
     """
 
     def __init__(self, url: str):
+        """Get url data and parse with "BeautifulSoup"
+
+        :param url: str
+            Valid url of news article
+        """
         self.url = url
         try:
             self.result = requests.get(self.url)
@@ -132,13 +177,13 @@ def clean_dataset(df: pd.DataFrame):
     # Clean data ----------------
     # Data type conversions
     df["paragraphs"] = df["paragraphs"].astype(str)
-    df["posted_date"] = pd.to_datetime(df["posted_date"])
+    # df["posted_date"] = pd.to_datetime(df["posted_date"])
 
     # Replace null/empty values with None
     df.replace(to_replace=["", '[]', 'NA', pd.NaT], value=None, inplace=True)
 
     # Reformat "posted_date" (remove time info)
-    df["posted_date"] = pd.to_datetime(df["posted_date"], format='%Y%m%d')
+    # df["posted_date"] = pd.to_datetime(df["posted_date"], format='%Y%m%d')
 
     # Drop empty/Null rows
     df.dropna(subset=['title', 'paragraphs'], inplace=True)
@@ -157,14 +202,90 @@ def clean_dataset(df: pd.DataFrame):
     return df
 
 
+def populate_db(data: pd.DataFrame, config_file="db.ini"):
+    """
+    Populate data into postgreSQL db server on EC2
+    :param config_file: postgresql server configurations
+    :param data: data to populate in db
+    :return:
+    """
+    # Convert dataframe to list of tuples in order to insert in db
+    records = data.to_records(index=False)
+    records = list(records)
+
+    # Connect to db
+    connection = None
+    try:
+        params = config(filename=config_file)
+        print('Connecting to the postgreSQL database ...')
+        connection = psycopg2.connect(**params)
+
+        # create a cursor
+        crsr = connection.cursor()
+        print('PostgreSQL database version: ')
+        crsr.execute('SELECT version()')
+        db_version = crsr.fetchone()
+        print(db_version)
+
+        # Delete table if exist
+        sql = '''
+            DROP TABLE IF EXISTS article;
+        '''
+        crsr.execute(sql)
+
+        # create Table
+        sql = '''
+            CREATE TABLE IF NOT EXISTS article(
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(255) UNIQUE NOT NULL,
+                paragraphs TEXT,
+                author VARCHAR(50),
+                posted_date DATE
+            );
+        '''
+        crsr.execute(sql)
+
+        # Populate data
+        args_str = ','.join(crsr.mogrify("(%s,%s,%s,%s)", x).decode("utf-8") for x in records)
+        sql = '''
+            INSERT INTO article
+                (title, paragraphs, author, posted_date)
+            VALUES
+        '''
+        sql = str(sql) + str(args_str)
+        # print(sql)
+        crsr.execute(sql)
+        connection.commit()
+
+        # Read table data from db
+        sql = '''
+            SELECT id, title, author, posted_date FROM article;
+        '''
+        crsr.execute(sql)
+        print("Read back populated data \n")
+        print(crsr.fetchall())
+
+        crsr.close()
+    except(Exception, psycopg2.DatabaseError) as error:
+        print(error)
+    finally:
+        if connection is not None:
+            connection.close()
+            print('Database connection terminated.')
+
+
 if __name__ == "__main__":
     """
         Standalone testing of WebScraper
     """
-    # url = "https://edition.cnn.com/2022/07/28/politics/joe-biden-xi-jinping-call/index.html"
-    # cnn_scraper = WebScraper(url=url)
-    # print(cnn_scraper.get_posted_date())
+    # Arguments
+    url_ = "https://edition.cnn.com"  # Base url of the news provider
+    max_articles_ = 350  # No: of articles to be scraped
+    config_file_ = "db.ini"  # File with remote database configurations
 
-    scraped_df = scrape_news_articles(url="https://edition.cnn.com", max_articles=25)
+    # Scrape news articles
+    scraped_df = scrape_news_articles(url=url_, max_articles=max_articles_)
+    # Clean and validate scraped data
     cleaned_df = clean_dataset(df=scraped_df)
-    print(cleaned_df)
+    # Store data in database
+    populate_db(data=cleaned_df, config_file=config_file_)
