@@ -38,3 +38,8 @@
   scrape_news.ipynb
   
   connect_db.ipynb
+  
+## Query the database
+
+### Notebook:
+query_db.ipynb
