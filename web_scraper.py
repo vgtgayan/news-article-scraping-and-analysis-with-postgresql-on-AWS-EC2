@@ -161,6 +161,7 @@ def get_article_urls(url="https://edition.cnn.com", max_links=250):
                 article_list.extend(article_urls)
     article_list = list(filter(None, article_list))
     article_list = list(set(article_list))
+    print("No of: all articles: ", len(article_list))
     return random.choices(article_list, k=max_links)
 
 
@@ -220,13 +221,15 @@ def scrape_news_articles(url="https://edition.cnn.com", max_articles=250):
             "articles": article_df[article_df['author'] == author]['url'].tolist()
         }
         author_data["article_count"] = len(author_data["articles"])
-        print(author_data)
         author_data_list.append(author_data)
     author_df = pd.DataFrame(author_data_list)
     # Dropping duplicate profile urls
     author_df.drop_duplicates(subset=['url'], inplace=True)
     # Dropping author_profile_url column since it is included in author data
     article_df = article_df.drop('author_profile_url', axis=1)
+    # Check consistency of "author" name between article and author datasets
+    # +1 is for '' value is removed in author_df
+    # assert len(authors) == len(author_df['name'].tolist()) + 1
 
     # Category data
     category_data_list = []
@@ -241,7 +244,6 @@ def scrape_news_articles(url="https://edition.cnn.com", max_articles=250):
                     'url'].tolist()
             }
             cat_data["article_count"] = len(cat_data["articles"])
-            print(cat_data)
             category_data_list.append(cat_data)
     category_df = pd.DataFrame(category_data_list)
 
@@ -318,7 +320,7 @@ def populate_db(
 
         # Author table -----------
         # Delete table if exist
-        sql = '''DROP TABLE IF EXISTS cnn_news.author;'''
+        sql = '''DROP TABLE IF EXISTS cnn_news.author CASCADE;'''
         crsr.execute(sql)
 
         # create Table
@@ -347,7 +349,7 @@ def populate_db(
         # Category table -----------
         # Delete table if exist
         sql = '''
-                    DROP TABLE IF EXISTS cnn_news.category;
+                    DROP TABLE IF EXISTS cnn_news.category CASCADE;
                 '''
         crsr.execute(sql)
 
@@ -357,7 +359,7 @@ def populate_db(
                         category VARCHAR(255) NOT NULL,
                         sub_category VARCHAR(255) NOT NULL,
                         articles TEXT,
-                        articles_count INT,
+                        article_count INT,
                         PRIMARY KEY(category, sub_category)
                     );
                 '''
@@ -367,7 +369,7 @@ def populate_db(
         args_str = ','.join(crsr.mogrify("(%s,%s,%s,%s)", x).decode("utf-8") for x in category_records)
         sql = '''
                     INSERT INTO cnn_news.category
-                        (category, sub_category, articles, articles_count)
+                        (category, sub_category, articles, article_count)
                     VALUES
                 '''
         sql = str(sql) + str(args_str)
@@ -377,7 +379,7 @@ def populate_db(
         # Article table -----------
         # Delete table if exist
         sql = '''
-                    DROP TABLE IF EXISTS cnn_news.article;
+                    DROP TABLE IF EXISTS cnn_news.article CASCADE;
                 '''
         crsr.execute(sql)
 
@@ -443,7 +445,7 @@ if __name__ == "__main__":
     """
     # Arguments
     url_ = "https://edition.cnn.com"  # Base url of the news provider
-    max_articles_ = 30  # No: of articles to be scraped
+    max_articles_ = 500  # No: of articles to be scraped
     config_file_ = "db.ini"  # File with remote database configurations
 
     # Scrape news articles
