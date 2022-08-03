@@ -87,7 +87,7 @@ class WebScraper:
         author_line = self.doc.find("span", class_="metadata__byline__author")
         if author_line is not None:
             author_name = author_line.find("a")
-            return author_name.string if (author_name is not None) else ""
+            return re.search(r'(\w[\w\. \']+\w)', author_name.string).group(1) if (author_name is not None) else ""
         else:
             return ""
 
@@ -229,7 +229,7 @@ def scrape_news_articles(url="https://edition.cnn.com", max_articles=250):
     article_df = article_df.drop('author_profile_url', axis=1)
     # Check consistency of "author" name between article and author datasets
     # +1 is for '' value is removed in author_df
-    # assert len(authors) == len(author_df['name'].tolist()) + 1
+    assert len(authors) == len(author_df['name'].tolist()) + 1
 
     # Category data
     category_data_list = []
